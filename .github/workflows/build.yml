@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew :tool:testDebugUnitTest -DlightSdk.toolOnly=true --stacktrace
+
+      - name: Build APK
+        run: ./gradlew :tool:assembleDebug -DlightSdk.toolOnly=true --stacktrace
+
+      - name: Name the APK
+        id: apk
+        run: |
+          VERSION=$(grep '^versionName' tool/lighttool.toml | cut -d'"' -f2)
+          mkdir -p out
+          cp tool/build/outputs/apk/debug/*.apk "out/Deen-${VERSION}.apk"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          sha256sum out/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Deen-apk
+          path: out/*.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.apk.outputs.version }}-build${{ github.run_number }}"
+          gh release create "$TAG" out/*.apk \
+            --title "Deen ${{ steps.apk.outputs.version }} (build ${{ github.run_number }})" \
+            --notes "Sideload onto a Light Phone III. See README for steps." \
+            --target "${{ github.sha }}" --latest

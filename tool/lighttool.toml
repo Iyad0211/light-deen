@@ -1,0 +1,16 @@
+[tool]
+id = "com.iyad.deen"
+label = "Deen"
+versionCode = 1
+versionName = "1.0.0"
+permissions = [
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.VIBRATE",
+]
+capabilities = []
+orientation = "portrait"
+# for the LightOS emulator, use the line below and build with -DlightSdk.allowAltServerPackage=true
+# serverPackage = "com.thelightphone.sdk.emulator"
+serverPackage = "com.lightos"
