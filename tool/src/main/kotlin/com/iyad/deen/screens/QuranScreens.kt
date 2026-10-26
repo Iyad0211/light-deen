@@ -221,16 +221,21 @@ class QuranReaderScreen(
                 }
 
                 val state = rememberLazyListState()
-                // items: 0 = header, 1..n = ayat, n+1 = footer
+                // The ayat flow continuously, mushaf-style. A surah is split into a few long
+                // paragraphs only so very long surahs stay smooth to scroll.
+                // items: 0 = header, 1..chunks = text, last = footer
+                val chunks = remember(surahNo) { flowChunks(surah.verses) }
                 LaunchedEffect(surahNo) {
-                    state.scrollToItem((jumpTo).coerceIn(1, surah.verses.size).let { if (it <= 1) 0 else it })
+                    val target = jumpTo.coerceIn(1, surah.verses.size)
+                    val idx = chunks.indexOfFirst { target in it }
+                    state.scrollToItem(if (target <= 1 || idx < 0) 0 else idx + 1)
                 }
                 LaunchedEffect(surahNo) {
                     snapshotFlow { state.firstVisibleItemIndex }
                         .distinctUntilChanged()
                         .debounce(800)
                         .collect { idx ->
-                            val ayah = idx.coerceIn(1, surah.verses.size)
+                            val ayah = chunks.getOrNull(idx - 1)?.first ?: 1
                             jumpTo = ayah
                             viewModel.saveProgress(surahNo, ayah)
                         }
@@ -240,9 +245,12 @@ class QuranReaderScreen(
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     LazyColumn(state = state, modifier = Modifier.fillMaxWidth().weight(1f)) {
                         item { SurahHeader(surah, colors) }
-                        itemsIndexed(surah.verses) { i, verse ->
+                        itemsIndexed(chunks) { _, range ->
                             Text(
-                                text = "$verse ۝${(i + 1).toArabicDigits()}",
+                                text = range.joinToString(" ") { a ->
+                                    // no-break space keeps each ayah marker on the same line as its last word
+                                    "${surah.verses[a - 1]}\u00A0\u06DD${a.toArabicDigits()}"
+                                },
                                 style = TextStyle(
                                     fontFamily = QuranFont,
                                     fontSize = fontSize,
@@ -253,7 +261,7 @@ class QuranReaderScreen(
                                 ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 1.5f.gridUnitsAsDp(), vertical = 0.2f.gridUnitsAsDp()),
+                                    .padding(horizontal = 1.5f.gridUnitsAsDp()),
                             )
                         }
                         item {
@@ -318,6 +326,23 @@ class QuranReaderScreen(
             }
         }
     }
+}
+
+/** Groups ayat into long paragraphs (~1,500 characters) of continuous text. */
+private fun flowChunks(verses: List<String>, target: Int = 1500): List<IntRange> {
+    val out = ArrayList<IntRange>()
+    var start = 1
+    var len = 0
+    verses.forEachIndexed { i, v ->
+        len += v.length + 4
+        val ayah = i + 1
+        if (len >= target || ayah == verses.size) {
+            out += start..ayah
+            start = ayah + 1
+            len = 0
+        }
+    }
+    return out
 }
 
 @Composable
